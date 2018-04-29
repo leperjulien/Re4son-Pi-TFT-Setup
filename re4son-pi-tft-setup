@@ -5,6 +5,61 @@ PROG_NAME="$0"
 ARGS="$@"
 VERSION="4.9-1.19.0"
 
+apt_pkg_req() {
+    APT_CHK=$(dpkg-query -W -f='${Status}\n' "$1" 2> /dev/null | grep "install ok installed")
+
+    if [ "" == "$APT_CHK" ]; then
+        echo "$1 is required"
+        true
+    else
+        echo "$1 is already installed"
+        false
+    fi
+}
+
+apt_pkg_install() {
+    echo "Installing $1..."
+    sudo apt-get --yes install "$1" 1> /dev/null || { inform "Apt failed to install $1!"; }
+}
+
+if [ "${pitfttype}" == "hyperpixel" ]; then
+pkgdeplist=( "python-rpi.gpio" "python-smbus" ) # list of dependencies
+for pkgdep in ${pkgdeplist[@]}; do
+    if apt_pkg_req "$pkgdep"; then
+    	apt_pkg_install "$pkgdep"
+    fi
+
+    if apt_pkg_req "python-evdev" &> /dev/null; then
+    sudo dpkg -i dependencies/python-evdev_0.6.4-1_armhf.deb
+    fi
+
+
+    dtbolist=( "hyperpixel" "hyperpixel-gpio-backlight" )
+
+    for dtbofile in ${dtbolist[@]}; do
+        sudo cp boot/overlays/$dtbofile.dtbo /boot/overlays/ &> /dev/null
+    done
+
+    binlist=( "hyperpixel-init" "hyperpixel-touch" )
+
+    for binfile in ${binlist[@]}; do
+        sudo cp usr/bin/$binfile /usr/bin/ &> /dev/null
+        sudo chmod +x /usr/bin/$binfile
+    done
+
+    echo -e "\nInstalling init script..."
+
+    sudo rm /etc/init.d/hyperpixel-touch.sh &> /dev/null # remove old init script
+    sudo mkdir -p /usr/lib/systemd/system
+
+    initlist=( "hyperpixel-init" "hyperpixel-touch" )
+
+    for initfile in ${initlist[@]}; do
+        sudo cp usr/lib/systemd/system/$initfile.service /usr/lib/systemd/system/ &> /dev/null
+        sudo systemctl enable $initfile
+    done
+
+    fi
 
 function print_version() {
     echo "Re4son Pi-TFT Setup $VERSION"
@@ -66,7 +121,7 @@ function check_update() {
     fi
     TEMP_FILE="/tmp/re4son-pi-tft-setup"
     info UPDATE "Downloading update"
-    wget -O ${TEMP_FILE} https://github.com/Re4son/Re4son-Pi-TFT-Setup/raw/rpts-4.9/re4son-pi-tft-setup
+    wget -O ${TEMP_FILE} https://github.com/Rson/Re4son-Pi-TFT-Setup/rawxxx/rpts-4.9/re4son-pi-tft-setup
     cp $TEMP_FILE $PROG_NAME
     chmod +x $PROG_NAME
     rm -f $TEMP_FILE
@@ -147,6 +202,7 @@ function print_help() {
     echo "                                                                         Osoyoo 3.5\")"
     echo "                                             'wave40'   (Waveshare 4\")"
     echo "                                             'wave50'   (Waveshare 5\" HDMI)"
+    echo "                                            'hyperpixel' (Hyperpixel 3.5\"(Pimoroni) )"
     echo
     echo "You must specify a type of display. Try \"wave35c\" if you are unsure what to use."
     exit 1
@@ -233,7 +289,28 @@ function update_configtxt() {
         echo "sudo nano /boot/config.txt"
         echo "...and remove any duplicate sections."
     fi
+    
+    if [ "${pitfttype}" == "hyperpixel" ]; then
+        overlay="# HyperPixel LCD Settings
+dtoverlay=hyperpixel
+overscan_left=0
+overscan_right=0
+overscan_top=0
+overscan_bottom=0
+framebuffer_width=800
+framebuffer_height=480
+enable_dpi_lcd=1
+display_default_lcd=1
+dpi_group=2
+dpi_mode=87
+dpi_output_format=0x6f016
+display_rotate=2
+hdmi_timings=800 0 50 20 50 480 1 3 2 3 0 0 0 60 0 32000000 6
 
+# Use a basic GPIO backlight driver with on/off support
+dtoverlay=hyperpixel-gpio-backlight"
+	fi
+	
     if [ "${pitfttype}" == "22" ]; then
         # formerly: options fbtft_device name=adafruit22a gpios=dc:25 rotate=270 frequency=32000000
         overlay="dtoverlay=pitft22,rotate=270,speed=32000000,fps=20"
@@ -583,7 +660,10 @@ function uninstall_console() {
 }
 
 function update_etcmodules() {
-    if [ "${pitfttype}" == "28c" ]; then
+	
+    if [ "${pitfttype}" == "hyperpixel" ]; then
+        ts_module="i2c-dev"
+    elif [ "${pitfttype}" == "28c" ]; then
         ts_module="ft6x06_ts"
     elif [ "${pitfttype}" == "28r" ] || [ "${pitfttype}" == "35r" ]; then
         ts_module="stmpe_ts"
@@ -704,9 +784,9 @@ function update_bootprefs() {
 exit 0;
 }
 
-# MAIN
+# MAIN ( ORIGINAL /home/pi )
 
-target_homedir="/home/pi"
+target_homedir="/home/r00t"
 
 args=$(getopt -uo 'hvuria:t:o:b:d:' -- $*)
 [ $? != 0 ] && print_help
@@ -804,7 +884,7 @@ if [ "${removetft}" == "YES" ]; then
     remove_tft || bail "Unable to remove tft configuration"
 fi
 
-if [ "${pitfttype}" != "4dpi" ] && [ "${pitfttype}" != "28r" ] && [ "${pitfttype}" != "28c" ] && [ "${pitfttype}" != "35r" ] && [ "${pitfttype}" != "22" ] && [ "${pitfttype}" != "elec22" ] && [ "${pitfttype}" != "hy28b" ] && [ "${pitfttype}" != "jb35" ] && [ "${pitfttype}" != "kum35" ] && [ "${pitfttype}" != "pi70" ] && [ "${pitfttype}" != "sain32" ] && [ "${pitfttype}" != "sain35" ] && [ "${pitfttype}" != "wave32" ] && [ "${pitfttype}" != "wave35" ] && [ "${pitfttype}" != "wave35b" ] && [ "${pitfttype}" != "wave35o" ] && [ "${pitfttype}" != "wave35c" ] && [ "${pitfttype}" != "wave35h" ] && [ "${pitfttype}" != "wave40" ] && [ "${pitfttype}" != "wave50" ]; then
+if [ "${pitfttype}" != "hyperpixel" ] && [ "${pitfttype}" != "4dpi" ] && [ "${pitfttype}" != "28r" ] && [ "${pitfttype}" != "28c" ] && [ "${pitfttype}" != "35r" ] && [ "${pitfttype}" != "22" ] && [ "${pitfttype}" != "elec22" ] && [ "${pitfttype}" != "hy28b" ] && [ "${pitfttype}" != "jb35" ] && [ "${pitfttype}" != "kum35" ] && [ "${pitfttype}" != "pi70" ] && [ "${pitfttype}" != "sain32" ] && [ "${pitfttype}" != "sain35" ] && [ "${pitfttype}" != "wave32" ] && [ "${pitfttype}" != "wave35" ] && [ "${pitfttype}" != "wave35b" ] && [ "${pitfttype}" != "wave35o" ] && [ "${pitfttype}" != "wave35c" ] && [ "${pitfttype}" != "wave35h" ] && [ "${pitfttype}" != "wave40" ] && [ "${pitfttype}" != "wave50" ]; then
     echo "Invalid screen. Choose a valid type from the list below."
     print_help
 fi
